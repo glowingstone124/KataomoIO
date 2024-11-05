@@ -54,7 +54,7 @@ class file_operations(val buffer_size: Int = 8192) {
 		val file = path.toFile()
 		val fileSize = file.length()
 
-		if (fileSize <= 0) {
+		if (fileSize < 0) {
 			throw IllegalArgumentException("File is empty or invalid.")
 		}
 		val channel = FileChannel.open(path, StandardOpenOption.READ)
