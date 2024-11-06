@@ -7,9 +7,14 @@ fun main() {
 
     val deferredRead = ioUring.insert(submission_struct(OPERATION.READ, Path.of("test.txt"), 1))
     while (true) {
-        ioUring.completion_queue_ring.forEach {
-            if (it.fd == deferredRead && it.code == 0) println(String(it.result as ByteArray))
-            return
+        val completedItems = ioUring.completion_queue_ring.filter { it.fd == deferredRead && it.code == 0 }
+
+        if (completedItems.isNotEmpty()) {
+            completedItems.forEach {
+                println(String(it.result as ByteArray))
+                ioUring.completion_queue_ring.remove(it)
+                return
+            }
         }
     }
 }

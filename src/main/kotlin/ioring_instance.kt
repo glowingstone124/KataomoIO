@@ -30,9 +30,6 @@ class ioring_instance(
 		return input.td
 	}
 
-	fun poll(): completion_struct? {
-		return completion_queue_ring.poll()
-	}
 
 	@OptIn(DelicateCoroutinesApi::class)
 	private fun startPolling() {
@@ -45,7 +42,8 @@ class ioring_instance(
 	}
 
 	fun execute() {
-		submission_queue_ring.forEach {
+		submission_queue_ring.forEach{
+			submission_queue_ring.remove(it)
 			var result: Pair<ByteArray?, Int>? = null
 			when (it.operation) {
 				OPERATION.READ -> {
@@ -76,6 +74,7 @@ class ioring_instance(
 					}
 				}
 			}
+			if (completion_queue_ring.size >= cqe_length) throw QueueOverFlowException()
 			if (result != null) {
 				completion_queue_ring.add(completion_struct(result = result.first, code = result.second, fd = it.td))
 			}
@@ -83,6 +82,15 @@ class ioring_instance(
 				completion_queue_ring.add(completion_struct(null, 1, fd = it.td))
 			}
 		}
+	}
+	fun get(td: Long) : Any? {
+		completion_queue_ring
+			.firstOrNull { it.fd == td && it.code == 0 }
+			?.let { completion ->
+				completion_queue_ring.remove(completion)
+				return completion.result
+			}
+		return null
 	}
 }
 
