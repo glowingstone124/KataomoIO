@@ -11,10 +11,9 @@ import kotlin.math.min
 
 class file_operations(val buffer_size: Int = 8192) {
 
-	private fun read_bytes(channel: ReadableByteChannel, fileSize: Long? = null): ByteArray {
+	private fun read_bytes(channel: ReadableByteChannel, fileSize: Long? = null): Pair<ByteArray?, Int> {
 		val byteArrayList = mutableListOf<Byte>()
 		var remaining = fileSize ?: Long.MAX_VALUE
-
 		val buffer = ByteBuffer.allocateDirect(buffer_size)
 
 		while (remaining > 0) {
@@ -31,11 +30,15 @@ class file_operations(val buffer_size: Int = 8192) {
 			remaining -= bytesRead.toLong()
 		}
 
-		return byteArrayList.toByteArray()
+		return if (byteArrayList.isEmpty()) {
+			Pair(null, 1)
+		} else {
+			Pair(byteArrayList.toByteArray(), 0)
+		}
 	}
 
-	private fun write_bytes(channel: WritableByteChannel, data: ByteArray?) {
-		if (data == null || data.isEmpty()) return
+	private fun write_bytes(channel: WritableByteChannel, data: ByteArray?): Int {
+		if (data == null || data.isEmpty()) return 1
 
 		val buffer = ByteBuffer.allocateDirect(buffer_size)
 		var offset = 0
@@ -45,37 +48,45 @@ class file_operations(val buffer_size: Int = 8192) {
 			buffer.put(data, offset, chunkSize)
 			buffer.flip()
 
-			channel.write(buffer)
+			val bytesWritten = channel.write(buffer)
+			if (bytesWritten == -1) return 2
 			offset += chunkSize
 		}
+		return 0
 	}
 
-	fun read_file(path: Path): ByteArray {
+	fun read_file(path: Path): Pair<ByteArray?, Int> {
 		val file = path.toFile()
 		val fileSize = file.length()
 
-		if (fileSize < 0) {
-			throw IllegalArgumentException("File is empty or invalid.")
+		if (fileSize <= 0) {
+			return null to 1
 		}
+
 		val channel = FileChannel.open(path, StandardOpenOption.READ)
-		return read_bytes(channel, fileSize)
+		val (data, code) = read_bytes(channel, fileSize)
+
+		return data to code
 	}
 
-	fun write_file(path: Path, data: ByteArray?) {
-		if (data == null || data.isEmpty()) return
-
-		Files.newByteChannel(path, StandardOpenOption.WRITE, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING).use { channel ->
-			write_bytes(channel, data)
+	fun write_file(path: Path, data: ByteArray?): Pair<ByteArray?, Int> {
+		val code = if (data == null || data.isEmpty()) {
+			1
+		} else {
+			Files.newByteChannel(path, StandardOpenOption.WRITE, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING).use { channel ->
+				write_bytes(channel, data)
+			}
 		}
+		return null to code
 	}
 
-	fun read_socket(socketChannel: SocketChannel): ByteArray {
-		return read_bytes(socketChannel)
+	fun read_socket(socketChannel: SocketChannel): Pair<ByteArray?, Int> {
+		val (data, code) = read_bytes(socketChannel)
+		return data to code
 	}
 
-	fun write_socket(socketChannel: SocketChannel, data: ByteArray?) {
-		if (data == null || data.isEmpty()) return
-
-		write_bytes(socketChannel, data)
+	fun write_socket(socketChannel: SocketChannel, data: ByteArray?): Pair<ByteArray?, Int> {
+		val code = write_bytes(socketChannel, data)
+		return null to code
 	}
 }
