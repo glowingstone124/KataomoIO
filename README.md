@@ -1,6 +1,6 @@
 # KataomoIO
 
-a io_uring like I/O library.
+> an io_uring like I/O library.
 
 ```Kotlin
 val ioUring = ioring_instance(12, 12, 8192);
@@ -19,4 +19,10 @@ while (true) {
 	}
 }
 ```
-Create an task, get its `fd` and wait for complete.
+Create a task, get its `fd` and wait for complete.
+
+## Supported Operations
+
+- `READ` for general reading
+- `WRITE_OVERRIDE` for writing override
+- `WRITE` for appending

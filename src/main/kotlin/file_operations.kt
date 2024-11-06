@@ -69,13 +69,20 @@ class file_operations(val buffer_size: Int = 8192) {
 		return data to code
 	}
 
-	fun write_file(path: Path, data: ByteArray?): Pair<ByteArray?, Int> {
+	fun write_file(path: Path, data: ByteArray?, operation: StandardOpenOption): Pair<ByteArray?, Int> {
 		val code = if (data == null || data.isEmpty()) {
 			1
 		} else {
-			Files.newByteChannel(path, StandardOpenOption.WRITE, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING).use { channel ->
+			val options = if (operation == StandardOpenOption.APPEND) {
+				arrayOf(StandardOpenOption.WRITE, StandardOpenOption.CREATE, StandardOpenOption.APPEND)
+			} else {
+				arrayOf(StandardOpenOption.WRITE, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING)
+			}
+
+			Files.newByteChannel(path, *options).use { channel ->
 				write_bytes(channel, data)
 			}
+			0
 		}
 		return null to code
 	}

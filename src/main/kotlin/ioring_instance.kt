@@ -5,6 +5,7 @@ import ind.glowingstone.Exceptions.QueueOverFlowException
 import kotlinx.coroutines.*
 import java.nio.channels.SocketChannel
 import java.nio.file.Path
+import java.nio.file.StandardOpenOption
 import java.util.concurrent.ConcurrentLinkedQueue
 import kotlin.random.Random
 
@@ -58,7 +59,16 @@ class ioring_instance(
 				}
 				OPERATION.WRITE -> {
 					if (it.path is Path) {
-						fop.write_file(path = it.path, it.data)
+						fop.write_file(path = it.path, it.data, StandardOpenOption.APPEND)
+					} else if (it.path is SocketChannel) {
+						fop.write_socket(it.path, it.data)
+					} else {
+						throw FileTargetNotSupportException()
+					}
+				}
+				OPERATION.WRITE_OVERRIDE -> {
+					if (it.path is Path) {
+						fop.write_file(path = it.path, it.data, StandardOpenOption.TRUNCATE_EXISTING)
 					} else if (it.path is SocketChannel) {
 						fop.write_socket(it.path, it.data)
 					} else {
@@ -88,7 +98,8 @@ class completion_struct(val result: Any?, val code: Int, val fd: Long)
 
 enum class OPERATION {
 	READ,
-	WRITE
+	WRITE,
+	WRITE_OVERRIDE,
 }
 
 fun randomLong(): Long {
