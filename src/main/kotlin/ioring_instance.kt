@@ -35,7 +35,7 @@ class ioring_instance(
 	private fun startPolling() {
 		GlobalScope.launch(coroutineScope) {
 			while (true) {
-				delay(10)
+				delay(5)
 				execute()
 			}
 		}
