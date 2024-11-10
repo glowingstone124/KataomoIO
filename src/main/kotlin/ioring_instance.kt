@@ -35,56 +35,79 @@ class ioring_instance(
 	private fun startPolling() {
 		GlobalScope.launch(coroutineScope) {
 			while (true) {
-				delay(100)
+				delay(10)
 				execute()
 			}
 		}
 	}
 
+
 	fun execute() {
-		submission_queue_ring.forEach{
-			submission_queue_ring.remove(it)
-			var result: Pair<ByteArray?, Int>? = null
-			when (it.operation) {
-				OPERATION.READ -> {
-					result = if (it.path is Path) {
-						fop.read_file(path = it.path)
-					} else if (it.path is SocketChannel) {
-						fop.read_socket(it.path)
-					} else {
-						throw FileTargetNotSupportException()
+		val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+		val jobs = mutableListOf<Job>()
+
+		submission_queue_ring.forEach { submission ->
+			jobs += scope.launch {
+				var result: Pair<ByteArray?, Int>? = null
+				when (submission.operation) {
+					OPERATION.READ -> {
+						result = if (submission.path is Path) {
+							fop.read_file(path = submission.path)
+						} else if (submission.path is SocketChannel) {
+							fop.read_socket(submission.path)
+						} else {
+							throw FileTargetNotSupportException()
+						}
+					}
+
+					OPERATION.WRITE -> {
+						if (submission.path is Path) {
+							fop.write_file(path = submission.path, submission.data, StandardOpenOption.APPEND)
+						} else if (submission.path is SocketChannel) {
+							fop.write_socket(submission.path, submission.data)
+						} else {
+							throw FileTargetNotSupportException()
+						}
+					}
+
+					OPERATION.WRITE_OVERRIDE -> {
+						if (submission.path is Path) {
+							fop.write_file(
+								path = submission.path,
+								submission.data,
+								StandardOpenOption.TRUNCATE_EXISTING
+							)
+						} else if (submission.path is SocketChannel) {
+							fop.write_socket(submission.path, submission.data)
+						} else {
+							throw FileTargetNotSupportException()
+						}
 					}
 				}
-				OPERATION.WRITE -> {
-					if (it.path is Path) {
-						fop.write_file(path = it.path, it.data, StandardOpenOption.APPEND)
-					} else if (it.path is SocketChannel) {
-						fop.write_socket(it.path, it.data)
-					} else {
-						throw FileTargetNotSupportException()
-					}
+
+				if (completion_queue_ring.size >= cqe_length) throw QueueOverFlowException()
+
+				if (result != null) {
+					completion_queue_ring.add(
+						completion_struct(
+							result = result.first,
+							code = result.second,
+							fd = submission.td
+						)
+					)
+				} else {
+					completion_queue_ring.add(completion_struct(null, 1, fd = submission.td))
 				}
-				OPERATION.WRITE_OVERRIDE -> {
-					if (it.path is Path) {
-						fop.write_file(path = it.path, it.data, StandardOpenOption.TRUNCATE_EXISTING)
-					} else if (it.path is SocketChannel) {
-						fop.write_socket(it.path, it.data)
-					} else {
-						throw FileTargetNotSupportException()
-					}
-				}
-			}
-			if (completion_queue_ring.size >= cqe_length) throw QueueOverFlowException()
-			if (result != null) {
-				completion_queue_ring.add(completion_struct(result = result.first, code = result.second, fd = it.td))
-			}
-			if (result == null) {
-				completion_queue_ring.add(completion_struct(null, 1, fd = it.td))
 			}
 		}
+
+		runBlocking {
+			jobs.joinAll()
+		}
 	}
-	fun get(td: Long) : Any? {
-		completion_queue_ring
+
+	fun get(td: Long): Any? {
+		return completion_queue_ring
 			.firstOrNull { it.fd == td && it.code == 0 }
 			?.let { completion ->
 				completion_queue_ring.remove(completion)

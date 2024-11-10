@@ -1,21 +1,40 @@
 package ind.glowingstone
-
 import java.nio.file.Path
+import kotlin.system.measureNanoTime
 
 fun main() {
-    val ioUring = ioring_instance(12, 12, 8192)
+    // 增加队列大小以处理更高的并发
+    val ioUring = ioring_instance(81920, 81920, 8192)
+    val path = Path.of("test.txt")
+    val readSize = 1024L
+    val iterations = 100
 
-    val deferredRead = ioUring.insert(submission_struct(OPERATION.READ, Path.of("test.txt"), 1))
-    while (true) {
-        val completedItems = ioUring.completion_queue_ring.filter { it.fd == deferredRead && it.code == 0 }
-
-        if (completedItems.isNotEmpty()) {
-            completedItems.forEach {
-                println(String(it.result as ByteArray))
-                ioUring.completion_queue_ring.remove(it)
-                return
+    // 使用更高的并发
+    val concurrency = 16
+    val ioUringDuration = measureNanoTime {
+        repeat(iterations) {
+            repeat(concurrency) {
+                val deferredRead = ioUring.insert(submission_struct(OPERATION.READ, path, readSize))
             }
         }
     }
-}
 
+    val ioUringAvgDuration = ioUringDuration / iterations
+    val ioUringThroughput = (iterations * readSize) / (ioUringDuration / 1_000_000_000.0)  // 字节/秒
+
+    println("kotlin double ring 平均读取时间: $ioUringAvgDuration 纳秒")
+    println("kotlin double ring 吞吐量: $ioUringThroughput 字节/秒")
+
+    // 使用传统 file.read 进行性能测试
+    val traditionalDuration = measureNanoTime {
+        repeat(iterations * concurrency) {
+            val data = java.nio.file.Files.readAllBytes(path)
+        }
+    }
+
+    val traditionalAvgDuration = traditionalDuration / iterations
+    val traditionalThroughput = (iterations * path.toFile().length()) / (traditionalDuration / 1_000_000_000.0)  // 字节/秒
+
+    println("传统文件读取平均时间: $traditionalAvgDuration 纳秒")
+    println("传统文件读取吞吐量: $traditionalThroughput 字节/秒")
+}
